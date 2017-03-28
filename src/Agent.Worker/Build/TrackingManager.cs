@@ -228,24 +228,52 @@ namespace Microsoft.VisualStudio.Services.Agent.Worker.Build
             }
 
             Trace.Info($"Find {gcTrackingFiles.Count()} GC tracking files.");
-            foreach (string gcFile in gcTrackingFiles)
+
+            if (gcTrackingFiles.Count() > 0)
             {
-                try
+                PrintOutDiskUsage(executionContext);
+                foreach (string gcFile in gcTrackingFiles)
                 {
-                    var gcConfig = LoadIfExists(executionContext, gcFile) as TrackingConfig;
-                    ArgUtil.NotNull(gcConfig, nameof(TrackingConfig));
+                    try
+                    {
+                        var gcConfig = LoadIfExists(executionContext, gcFile) as TrackingConfig;
+                        ArgUtil.NotNull(gcConfig, nameof(TrackingConfig));
 
-                    string fullPath = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Work), gcConfig.BuildDirectory);
-                    executionContext.Output(StringUtil.Loc("Deleting", fullPath));
-                    IOUtil.DeleteDirectory(fullPath, CancellationToken.None);
+                        string fullPath = Path.Combine(HostContext.GetDirectory(WellKnownDirectory.Work), gcConfig.BuildDirectory);
+                        executionContext.Output(StringUtil.Loc("Deleting", fullPath));
+                        IOUtil.DeleteDirectory(fullPath, executionContext.CancellationToken);
 
-                    executionContext.Output(StringUtil.Loc("DeleteGCTrackingFile", fullPath));
-                    IOUtil.DeleteFile(gcFile);
+                        executionContext.Output(StringUtil.Loc("DeleteGCTrackingFile", fullPath));
+                        IOUtil.DeleteFile(gcFile);
+                    }
+                    catch (Exception ex)
+                    {
+                        executionContext.Error(StringUtil.Loc("ErrorDuringBuildGCDelete", gcFile));
+                        executionContext.Error(ex);
+                    }
                 }
-                catch (Exception ex)
+
+                PrintOutDiskUsage(executionContext);
+            }
+        }
+
+        private void PrintOutDiskUsage(IExecutionContext context)
+        {
+            var allDrives = DriveInfo.GetDrives();
+            context.Output("Available free space for all drives:");
+            foreach (var drive in allDrives)
+            {
+                if (drive.IsReady)
                 {
-                    executionContext.Error(StringUtil.Loc("ErrorDuringBuildGCDelete", gcFile));
-                    executionContext.Error(ex);
+                    try
+                    {
+                        context.Output($"{drive.Name} {drive.AvailableFreeSpace / 1000.0 / 1000.0} MB");
+                    }
+                    catch (Exception ex)
+                    {
+                        context.Warning($"Unable inspect disk usage for '{drive.Name}'");
+                        context.Warning(ex.ToString());
+                    }
                 }
             }
         }
